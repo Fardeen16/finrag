@@ -1,0 +1,16 @@
+.git
+.venv
+__pycache__
+*.py[cod]
+node_modules
+frontend/dist
+data/qdrant_db
+data/alphabet_10k_submission.txt
+data/enriched_chunks.json
+data/*.db
+.env
+.env.*
+!.env.example
+*.md
+agent-transcripts
+.cursor

@@ -1,0 +1,36 @@
+{
+  "family": "finrag",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "ROLE_EXECUTION",
+  "taskRoleArn": "ROLE_TASK",
+  "containerDefinitions": [
+    {
+      "name": "app",
+      "image": "IMAGE_URI",
+      "essential": true,
+      "portMappings": [{ "containerPort": 8080, "protocol": "tcp" }],
+      "environment": [
+        { "name": "AGENT_MODE", "value": "live" },
+        { "name": "EMBEDDING_PROVIDER", "value": "local" },
+        { "name": "VLLM_MODEL", "value": "Qwen/Qwen2.5-7B-Instruct-AWQ" }
+      ],
+      "secrets": [
+        { "name": "VLLM_BASE_URL", "valueFrom": "SSM_VLLM_URL" },
+        { "name": "VLLM_API_KEY", "valueFrom": "SSM_VLLM_KEY" },
+        { "name": "QDRANT_URL", "valueFrom": "SSM_QDRANT_URL" },
+        { "name": "QDRANT_API_KEY", "valueFrom": "SSM_QDRANT_KEY" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/finrag",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "app"
+        }
+      }
+    }
+  ]
+}

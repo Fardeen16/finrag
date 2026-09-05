@@ -1,0 +1,26 @@
+# Local run: vLLM on the host, Qdrant Cloud from .env.
+# From inside the container, localhost is the container itself, so vLLM is
+# reached via host.docker.internal (Docker Desktop on Windows/Mac).
+#
+#   docker compose up --build
+#
+# Then http://localhost:8080  and  http://localhost:8080/api/health
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+    image: finrag:local
+    ports:
+      - "8080:8080"
+    env_file: .env
+    environment:
+      AGENT_MODE: live
+      EMBEDDING_PROVIDER: local
+      # VLLM_BASE_URL comes from .env so the same compose file can hit local
+      # vLLM (http://host.docker.internal:8000/v1) or RunPod Serverless.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

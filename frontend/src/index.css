@@ -1,0 +1,49 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-canvas: #0a0d14;
+  --color-panel: #11151f;
+  --color-edge: #202634;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+}
+
+@keyframes trace-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@utility animate-trace-in {
+  animation: trace-in 0.28s ease-out both;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: var(--color-canvas);
+  color: #e6e9ef;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbars that don't fight the dark theme. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a3040 transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #2a3040;
+  border-radius: 4px;
+}

@@ -1,0 +1,26 @@
+# Blueprint for https://dashboard.render.com → New → Blueprint
+# Free is 512 MB. This app may need the 1c-2g plan if a question OOMs.
+services:
+  - type: web
+    name: finrag
+    runtime: docker
+    plan: free
+    region: oregon
+    healthCheckPath: /api/health
+    envVars:
+      - key: AGENT_MODE
+        value: live
+      - key: EMBEDDING_PROVIDER
+        value: local
+      - key: WARMUP_ON_START
+        value: "0"
+      - key: VLLM_BASE_URL
+        sync: false
+      - key: VLLM_MODEL
+        sync: false
+      - key: VLLM_API_KEY
+        sync: false
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false

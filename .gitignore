@@ -1,0 +1,32 @@
+# Secrets — agent_tools.py currently hardcodes an API key; move it here first.
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# Node
+node_modules/
+frontend/dist/
+
+# Data stores and downloaded filings are regenerable from the ingestion scripts
+data/qdrant_db/
+data/*.db
+data/chunks*.json
+data/*10k*
+data_old/
+
+# Dead scripts that still contain leaked API keys
+agent_tools.py
+populate_db.py
+enrich_chunk.py
+/check_model.py
+/main.py
+data/enriched_chunks.json
+data/alphabet_10k_submission.txt
+
+.cursor/
+agent-transcripts/
