@@ -28,7 +28,7 @@ REPO = os.environ.get(
 VARIABLES = {
     "AGENT_MODE": "live",
     "EMBEDDING_PROVIDER": "local",
-    "WARMUP_ON_START": "0",
+    "WARMUP_ON_START": "1",
     "VLLM_MODEL": None,  # from .env
     "VLLM_BASE_URL": None,
 }
@@ -130,7 +130,7 @@ def main() -> None:
     env_vars = [
         {"key": "AGENT_MODE", "value": "live"},
         {"key": "EMBEDDING_PROVIDER", "value": "local"},
-        {"key": "WARMUP_ON_START", "value": "0"},
+        {"key": "WARMUP_ON_START", "value": "1"},
         {"key": "VLLM_BASE_URL", "value": env["VLLM_BASE_URL"]},
         {"key": "VLLM_MODEL", "value": env["VLLM_MODEL"]},
     ]

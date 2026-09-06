@@ -45,10 +45,14 @@ async def optimize_query(query: str) -> str:
 async def librarian_rag_tool(query: str) -> List[Dict[str, Any]]:
     """Retrieves deep, contextual information from Alphabet's financial filings."""
     settings = get_settings()
-    assert_dimension_matches(collection_dimension())
+    # Load weights off the event loop. Doing this inline froze SSE heartbeats
+    # on the 512 MB Render box and looked like a hung Tool Executor.
+    await asyncio.to_thread(get_embeddings)
+    await asyncio.to_thread(lambda: assert_dimension_matches(collection_dimension()))
 
-    optimized = await optimize_query(query)
-    embedding = await asyncio.to_thread(get_embeddings().embed_query, optimized)
+    # Skip the rewrite LLM. It added a full vLLM round-trip inside the first
+    # tool call and is what made Tool Executor sit still for minutes.
+    embedding = await asyncio.to_thread(get_embeddings().embed_query, query)
 
     hits = await asyncio.to_thread(
         lambda: get_qdrant().query_points(
@@ -62,8 +66,9 @@ async def librarian_rag_tool(query: str) -> List[Dict[str, Any]]:
         return []
 
     # CrossEncoder is CPU-bound; keep it off the event loop.
-    pairs = [[optimized, hit.payload.get("content", "")] for hit in hits]
-    scores = await asyncio.to_thread(get_reranker().predict, pairs)
+    reranker = await asyncio.to_thread(get_reranker)
+    pairs = [[query, hit.payload.get("content", "")] for hit in hits]
+    scores = await asyncio.to_thread(reranker.predict, pairs)
 
     ranked = sorted(zip(hits, scores), key=lambda pair: pair[1], reverse=True)
     return [

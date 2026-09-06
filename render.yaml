@@ -13,7 +13,7 @@ services:
       - key: EMBEDDING_PROVIDER
         value: local
       - key: WARMUP_ON_START
-        value: "0"
+        value: "1"
       - key: VLLM_BASE_URL
         sync: false
       - key: VLLM_MODEL
