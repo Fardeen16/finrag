@@ -29,22 +29,26 @@ def chat_model(
     streaming: bool = True,
 ) -> ChatOpenAI:
     settings = get_settings()
-    return ChatOpenAI(
-        base_url=settings.vllm_base_url,
-        api_key=settings.vllm_api_key,
-        model=settings.vllm_model,
-        temperature=temperature,
-        max_completion_tokens=max_tokens,
-        timeout=settings.llm_timeout_s,
-        max_retries=settings.llm_max_retries,
-        # Default 120s kills the first chunk of a cold RunPod worker.
-        stream_chunk_timeout=settings.llm_timeout_s,
-        disable_streaming=not streaming,
+    kwargs: dict = {
+        "base_url": settings.vllm_base_url,
+        "api_key": settings.vllm_api_key,
+        "model": settings.vllm_model,
+        "temperature": temperature,
+        "max_completion_tokens": max_tokens,
+        "timeout": settings.llm_timeout_s,
+        "max_retries": settings.llm_max_retries,
+        "disable_streaming": not streaming,
         # httpx2's gzip/brotli decoder crashes on RunPod responses
         # (`process() takes no keyword arguments`) and langchain reports that
         # as a generic "Connection error."
-        default_headers={"Accept-Encoding": "identity"},
-    )
+        "default_headers": {"Accept-Encoding": "identity"},
+    }
+    # ChatOpenAI forwards this to every OpenAI call. Structured output uses
+    # AsyncCompletions.parse(), which rejects it. Only attach it on streams,
+    # where the default 120s chunk wait kills a cold RunPod worker.
+    if streaming:
+        kwargs["stream_chunk_timeout"] = settings.llm_timeout_s
+    return ChatOpenAI(**kwargs)
 
 
 def structured_model(schema: Type[TModel], temperature: float = 0.0):

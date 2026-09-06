@@ -22,7 +22,7 @@ API = "https://api.render.com/v1"
 SERVICE_NAME = os.environ.get("RENDER_SERVICE_NAME", "finrag")
 REPO = os.environ.get(
     "RENDER_REPO",
-    "https://huggingface.co/spaces/fardeen16/finrag",
+    "https://github.com/Fardeen16/finrag",
 )
 
 VARIABLES = {
