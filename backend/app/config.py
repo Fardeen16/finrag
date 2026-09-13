@@ -68,6 +68,8 @@ class Settings(BaseSettings):
         return value
 
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    # CrossEncoder needs PyTorch. Off by default so Librarian fits in 512 MB.
+    enable_reranker: bool = False
     retrieval_candidates: int = 20
     retrieval_top_k: int = 5
 
@@ -96,8 +98,7 @@ class Settings(BaseSettings):
     # 'mock' replays canned traces so the UI can be developed without a GPU.
     # 'live' runs the LangGraph supervisor against vLLM + Qdrant.
     agent_mode: Literal["mock", "live"] = "mock"
-    # Load BGE + CrossEncoder during lifespan. Turn off on 512 MB hosts
-    # (Render Free) so uvicorn can bind before the first Librarian call.
+    # FastEmbed is small enough to load at boot on 512 MB.
     warmup_on_start: bool = True
 
     def require_google_key(self) -> str:

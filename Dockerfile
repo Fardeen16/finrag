@@ -32,9 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# CPU torch first so sentence-transformers does not pull a CUDA wheel.
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir --upgrade pip
 
 COPY backend/requirements.txt backend/requirements.txt
 RUN pip install --no-cache-dir -r backend/requirements.txt
@@ -45,10 +43,9 @@ COPY --from=frontend --chown=user:user /ui/dist ./frontend/dist
 
 USER user
 
-# Bake model weights so the first Spaces request does not download HF models.
-RUN python -c "from sentence_transformers import SentenceTransformer, CrossEncoder; \
-SentenceTransformer('BAAI/bge-small-en-v1.5'); \
-CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
+# Bake the ONNX BGE weights (~70 MB). Do not pull PyTorch — it will not fit
+# in a 512 MB host and is what made Librarian hang.
+RUN python -c "from fastembed import TextEmbedding; TextEmbedding('BAAI/bge-small-en-v1.5')"
 
 EXPOSE 8080
 CMD ["sh", "-c", "uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]

@@ -37,10 +37,9 @@ def _warmup() -> None:
     which on Fargate is paid by whoever happens to ask first.
     """
     from .agent.embeddings import get_embeddings
-    from .agent.resources import get_qdrant, get_reranker, get_sql_database
+    from .agent.resources import get_qdrant, get_sql_database
 
     get_embeddings()
-    get_reranker()
     get_qdrant()
     get_sql_database()
 

@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from ..config import get_settings
 from .embeddings import assert_dimension_matches, get_embeddings
 from .llm import chat_model, structured_model
-from .resources import collection_dimension, get_qdrant, get_reranker, get_sql_database
+from .resources import collection_dimension, get_qdrant, get_sql_database
 
 _QUERY_REWRITE = (
     'Rewrite the following query for a semantic search system. Respond with ONLY '
@@ -45,40 +45,36 @@ async def optimize_query(query: str) -> str:
 async def librarian_rag_tool(query: str) -> List[Dict[str, Any]]:
     """Retrieves deep, contextual information from Alphabet's financial filings."""
     settings = get_settings()
-    # Load weights off the event loop. Doing this inline froze SSE heartbeats
-    # on the 512 MB Render box and looked like a hung Tool Executor.
     await asyncio.to_thread(get_embeddings)
     await asyncio.to_thread(lambda: assert_dimension_matches(collection_dimension()))
-
-    # Skip the rewrite LLM. It added a full vLLM round-trip inside the first
-    # tool call and is what made Tool Executor sit still for minutes.
     embedding = await asyncio.to_thread(get_embeddings().embed_query, query)
 
+    # No CrossEncoder: that second PyTorch model is what pinned 512 MB boxes.
+    # Qdrant already returns cosine-ranked hits for this 200-chunk collection.
+    limit = (
+        settings.retrieval_candidates
+        if settings.enable_reranker
+        else settings.retrieval_top_k
+    )
     hits = await asyncio.to_thread(
         lambda: get_qdrant().query_points(
             collection_name=settings.collection_name,
             query=embedding,
-            limit=settings.retrieval_candidates,
+            limit=limit,
             with_payload=True,
         ).points
     )
     if not hits:
         return []
 
-    # CrossEncoder is CPU-bound; keep it off the event loop.
-    reranker = await asyncio.to_thread(get_reranker)
-    pairs = [[query, hit.payload.get("content", "")] for hit in hits]
-    scores = await asyncio.to_thread(reranker.predict, pairs)
-
-    ranked = sorted(zip(hits, scores), key=lambda pair: pair[1], reverse=True)
     return [
         {
             "source": hit.payload.get("source"),
             "content": hit.payload.get("content"),
             "summary": hit.payload.get("summary"),
-            "rerank_score": float(score),
+            "rerank_score": float(hit.score) if hit.score is not None else None,
         }
-        for hit, score in ranked[: settings.retrieval_top_k]
+        for hit in hits[: settings.retrieval_top_k]
     ]
 
 

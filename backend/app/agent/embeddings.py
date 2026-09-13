@@ -1,14 +1,11 @@
 """Embedding providers.
 
-This is the one part of the Gemini migration that is not a config change. The
-existing Qdrant collection holds 768-dimensional text-embedding-004 vectors.
-Embeddings from a different model are not comparable to those, even at matching
-dimensionality, so switching providers means recreating the collection.
+The Qdrant collection is 384-d BGE (`BAAI/bge-small-en-v1.5`). Query and
+passage vectors from different models are not comparable, so
+`assert_dimension_matches` fails closed if the collection size drifts.
 
-The failure mode if you switch without re-indexing is nasty: Qdrant happily
-returns nearest neighbours in the wrong vector space, so retrieval degrades to
-noise while every component reports success. `assert_dimension_matches` exists
-to turn that into an error at startup.
+Local queries use FastEmbed (ONNX, ~70 MB) instead of sentence-transformers /
+PyTorch. Loading torch on a 512 MB Render box is what froze Tool Executor.
 """
 
 from __future__ import annotations
@@ -21,43 +18,23 @@ from langchain_core.embeddings import Embeddings
 from ..config import get_settings
 
 
-# BGE retrieval models are trained asymmetrically: queries get an instruction
-# prefix, passages do not. Omitting it costs real accuracy, and since the
-# asymmetry is invisible at call time it is easy to get wrong in one place only.
-BGE_QUERY_INSTRUCTION = "Represent this sentence for searching relevant passages: "
-
-
-class SentenceTransformerEmbeddings(Embeddings):
-    """Local embeddings via sentence-transformers.
-
-    Hand-rolled rather than pulling in langchain-huggingface, since
-    sentence-transformers is already a dependency for the CrossEncoder reranker.
-    """
+class FastEmbedEmbeddings(Embeddings):
+    """BGE via ONNX. Same 384-d cosine space as the existing Qdrant index."""
 
     def __init__(self, model_name: str) -> None:
-        from sentence_transformers import SentenceTransformer
+        from fastembed import TextEmbedding
 
-        self._model = SentenceTransformer(model_name)
-        self._query_instruction = (
-            BGE_QUERY_INSTRUCTION if "bge" in model_name.lower() else ""
-        )
+        self._model = TextEmbedding(model_name=model_name)
 
     @property
     def dimension(self) -> int:
-        return int(self._model.get_sentence_embedding_dimension())
-
-    def _encode(self, texts: List[str]) -> List[List[float]]:
-        # Normalised vectors make cosine distance equivalent to a dot product,
-        # which is what the collection is configured for.
-        return self._model.encode(
-            texts, normalize_embeddings=True, show_progress_bar=False
-        ).tolist()
+        return int(len(next(self._model.query_embed("dimension probe"))))
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        return self._encode(texts)
+        return [vector.tolist() for vector in self._model.passage_embed(texts)]
 
     def embed_query(self, text: str) -> List[float]:
-        return self._encode([self._query_instruction + text])[0]
+        return next(self._model.query_embed(text)).tolist()
 
 
 @lru_cache(maxsize=1)
@@ -65,7 +42,7 @@ def get_embeddings() -> Embeddings:
     settings = get_settings()
 
     if settings.embedding_provider == "local":
-        return SentenceTransformerEmbeddings(settings.local_embedding_model)
+        return FastEmbedEmbeddings(settings.local_embedding_model)
 
     from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
@@ -77,7 +54,7 @@ def get_embeddings() -> Embeddings:
 
 def embedding_dimension() -> int:
     embedder = get_embeddings()
-    if isinstance(embedder, SentenceTransformerEmbeddings):
+    if isinstance(embedder, FastEmbedEmbeddings):
         return embedder.dimension
     return len(embedder.embed_query("dimension probe"))
 
