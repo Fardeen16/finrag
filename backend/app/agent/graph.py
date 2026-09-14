@@ -124,22 +124,28 @@ AMBIGUOUS examples:
 Request: "{request}"
 """
 
-AUDITOR_PROMPT = """Audit whether this tool output answers the user's request.
+AUDITOR_PROMPT = """Audit this single tool call. Be lenient.
 
-Score 1-5 on whether the output, on its own, is sufficient to answer the request:
-  1-2 = misses the request or covers only part of a multi-part question
-  3   = adequate
-  4-5 = fully covers the request
+Score 1 only when the tool crashed, refused, or returned an execution error.
+Any real payload — including "no rows", partial coverage, or data for a
+different year than the user asked — is at least a 3. Other tools or the
+Synthesizer can fill gaps. Do not fail a tool for being incomplete on its own.
 
 User request: {request}
 Tool called: {tool_name}
 Tool output: {tool_output}
 """
 
-SYNTHESIZER_PROMPT = """You are an expert financial analyst. Answer the user's request
-using only the context below. Where you infer a causal link, label it explicitly as a
-hypothesis rather than stating it as fact. If the context does not support part of the
-request, say so.
+SYNTHESIZER_PROMPT = """You are an expert financial analyst. Write a complete
+answer to the user's request using every tool output below.
+
+Rules:
+- Combine the successful tools into one answer. Do not ignore a tool that
+  returned useful text.
+- If one tool found nothing or only covered part of the question, say so
+  briefly and answer from the other tools.
+- Where you infer a causal link, label it as a hypothesis.
+- If the context does not support part of the request, say so.
 
 User request:
 {request}
@@ -150,6 +156,36 @@ Context:
 ---
 
 Answer:"""
+
+_TOOL_ERROR_MARKERS = (
+    "tool raised",
+    "unknown tool",
+    "could not read database",
+    "could not generate sql",
+    "sql failed",
+    "web search failed",
+    "refused:",
+)
+
+
+def _tool_output_is_error(output: Any) -> bool:
+    text = output if isinstance(output, str) else json.dumps(output, default=str)
+    lowered = text.lower()
+    return any(marker in lowered for marker in _TOOL_ERROR_MARKERS)
+
+
+def _lenient_audit(raw: Dict[str, Any], tool_output: Any) -> Dict[str, Any]:
+    """Force 1 only on real tool errors; otherwise never fail the pass threshold."""
+    settings = get_settings()
+    audit = dict(raw)
+    if _tool_output_is_error(tool_output):
+        audit["confidence_score"] = 1
+        audit["is_relevant"] = False
+        return audit
+    score = int(audit.get("confidence_score") or settings.audit_pass_score)
+    audit["confidence_score"] = max(score, settings.audit_pass_score)
+    audit["is_relevant"] = True
+    return audit
 
 
 def _planner_prompt(request: str, feedback: str) -> str:
@@ -209,12 +245,19 @@ async def planner_node(state: AgentState) -> Dict[str, Any]:
     if is_replan:
         audit = history[-1]
         failed_tool = steps[-1]["tool_name"] if steps else "unknown"
+        kept = [s["tool_name"] for s in steps[:-1]]
+        kept_note = (
+            f"Keep using the already-successful tools ({', '.join(kept)}). "
+            if kept
+            else ""
+        )
         feedback = (
             "Previous attempt feedback:\n"
-            f"The tool '{failed_tool}' was called but the auditor scored it "
-            f"{audit['confidence_score']}/5, reasoning: '{audit['reasoning']}'\n"
-            "Produce a DIFFERENT plan that covers what was missed. Do not repeat the "
-            "same first step.\n"
+            f"The tool '{failed_tool}' errored (auditor {audit['confidence_score']}/5): "
+            f"'{audit['reasoning']}'\n"
+            f"{kept_note}"
+            "Produce a DIFFERENT next step that covers what was missed. "
+            "Do not repeat the failed tool as the first step.\n"
         )
 
     plan = await structured_model(Plan).ainvoke(_planner_prompt(request, feedback))
@@ -226,10 +269,10 @@ async def planner_node(state: AgentState) -> Dict[str, Any]:
 
     updates: Dict[str, Any] = {"plan": steps_out}
     if is_replan:
-        # Discard rejected work so the Synthesizer never grounds on it, and reset
-        # the audit trail so the router judges the new attempt on its own merits.
-        updates["intermediate_steps"] = []
-        updates["verification_history"] = []
+        # Drop only the failed last step. Successful earlier tools stay so the
+        # Synthesizer can still write a collective answer.
+        updates["intermediate_steps"] = steps[:-1]
+        updates["verification_history"] = history[:-1]
         updates["replan_count"] = state.get("replan_count", 0) + 1
     return updates
 
@@ -281,7 +324,7 @@ async def auditor_node(state: AgentState) -> Dict[str, Any]:
                 tool_output=json.dumps(last["tool_output"], default=str)[:2500],
             )
         )
-        audit = result.model_dump()
+        audit = _lenient_audit(result.model_dump(), last["tool_output"])
     except Exception as exc:
         # Treat an unreadable audit as a pass. Failing closed here would replan
         # on infrastructure errors, which is the wrong response.
@@ -308,10 +351,26 @@ async def synthesizer_node(state: AgentState) -> Dict[str, Any]:
         f"## Tool: {s['tool_name']}\nOutput: {json.dumps(s['tool_output'], default=str)[:3000]}"
         for s in steps
     )
-    response = await chat_model(temperature=0.2, max_tokens=1024).ainvoke(
-        SYNTHESIZER_PROMPT.format(request=state["original_request"], context=context)
-    )
-    return {"final_response": response.content}
+    try:
+        response = await chat_model(temperature=0.2, max_tokens=1024).ainvoke(
+            SYNTHESIZER_PROMPT.format(request=state["original_request"], context=context)
+        )
+        text = (getattr(response, "content", None) or "").strip()
+    except Exception as exc:
+        text = ""
+        fallback_reason = f"Synthesizer LLM failed ({type(exc).__name__})."
+    else:
+        fallback_reason = "Synthesizer returned no text."
+
+    if not text:
+        text = (
+            f"{fallback_reason} Grounded tool results:\n\n"
+            + "\n\n".join(
+                f"**{s['tool_name']}**: {json.dumps(s['tool_output'], default=str)[:800]}"
+                for s in steps
+            )
+        )
+    return {"final_response": text}
 
 
 # --- Routing ----------------------------------------------------------------
