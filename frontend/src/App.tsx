@@ -16,34 +16,6 @@ const SPEEDS = [
   { label: '20×', value: 20, hint: 'Fast iteration' },
 ]
 
-const TURNS_KEY = 'finrag.chat.turns'
-
-type ChatTurn = {
-  id: string
-  query: string
-  answer: string
-  clarification?: string
-  errorMessage?: string
-}
-
-function loadTurns(): ChatTurn[] {
-  try {
-    const raw = sessionStorage.getItem(TURNS_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw) as unknown
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter(
-      (item): item is ChatTurn =>
-        typeof item === 'object' &&
-        item !== null &&
-        typeof (item as ChatTurn).id === 'string' &&
-        typeof (item as ChatTurn).query === 'string',
-    )
-  } catch {
-    return []
-  }
-}
-
 function ConversationTurn({
   query,
   answer,
@@ -115,10 +87,22 @@ export default function App() {
   const [draft, setDraft] = useState(EXAMPLES[0])
   const [speed, setSpeed] = useState(5)
   const [agentMode, setAgentMode] = useState<'live' | 'mock'>('mock')
-  const [turns, setTurns] = useState<ChatTurn[]>(loadTurns)
-  const activeIdRef = useRef<string | null>(null)
   const answerRef = useRef<HTMLDivElement>(null)
   const streaming = state.status === 'streaming'
+  const turns = [
+    ...state.history,
+    ...(state.query
+      ? [
+          {
+            id: state.runId ?? 'current',
+            query: state.query,
+            answer: state.answer,
+            clarification: state.clarification,
+            errorMessage: state.errorMessage,
+          },
+        ]
+      : []),
+  ]
 
   useEffect(() => {
     void fetch('/api/health')
@@ -130,56 +114,12 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const id = activeIdRef.current
-    if (!id) return
-    setTurns((prev) =>
-      prev.map((turn) =>
-        turn.id === id
-          ? {
-              ...turn,
-              answer: state.answer,
-              clarification: state.clarification,
-              errorMessage: state.errorMessage,
-            }
-          : turn,
-      ),
-    )
-    if (state.status === 'done' || state.status === 'error') {
-      activeIdRef.current = null
-    }
-  }, [state.answer, state.clarification, state.errorMessage, state.status])
-
-  useEffect(() => {
-    const sealed = turns.filter((turn) => turn.id !== activeIdRef.current)
-    sessionStorage.setItem(TURNS_KEY, JSON.stringify(sealed))
-  }, [turns])
-
-  useEffect(() => {
     answerRef.current?.scrollTo({ top: answerRef.current.scrollHeight })
   }, [turns, streaming])
 
   function submit() {
     const query = draft.trim()
-    if (!query || streaming) return
-    const previousId = activeIdRef.current
-    const id = crypto.randomUUID()
-    activeIdRef.current = id
-    setTurns((prev) => {
-      const sealed = previousId
-        ? prev.map((turn) =>
-            turn.id === previousId
-              ? {
-                  ...turn,
-                  answer: state.answer || turn.answer,
-                  clarification: state.clarification ?? turn.clarification,
-                  errorMessage: state.errorMessage ?? turn.errorMessage,
-                }
-              : turn,
-          )
-        : prev
-      return [...sealed, { id, query, answer: '' }]
-    })
-    void send(query, speed)
+    if (query && !streaming) void send(query, speed)
   }
 
   return (
@@ -228,7 +168,11 @@ export default function App() {
       <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[1fr_420px]">
         <main className="flex min-h-0 flex-col gap-3">
           <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-edge bg-panel">
-            <div ref={answerRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            <div
+              ref={answerRef}
+              data-chat-thread="keep"
+              className="min-h-0 flex-1 overflow-y-auto px-5 py-4"
+            >
               {turns.length === 0 && (
                 <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
                   <p className="max-w-sm text-sm leading-relaxed text-slate-500">
@@ -252,14 +196,14 @@ export default function App() {
 
               {turns.length > 0 && (
                 <div className="space-y-6">
-                  {turns.map((turn) => (
+                  {turns.map((turn, index) => (
                     <ConversationTurn
                       key={turn.id}
                       query={turn.query}
                       answer={turn.answer}
                       clarification={turn.clarification}
                       errorMessage={turn.errorMessage}
-                      streaming={streaming && turn.id === activeIdRef.current}
+                      streaming={streaming && index === turns.length - 1}
                     />
                   ))}
                 </div>

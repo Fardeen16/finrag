@@ -35,6 +35,14 @@ export interface TraceEntry {
   tools: ToolCall[]
 }
 
+export interface ChatTurn {
+  id: string
+  query: string
+  answer: string
+  clarification?: string
+  errorMessage?: string
+}
+
 export interface RunState {
   status: 'idle' | 'streaming' | 'done' | 'error'
   query: string
@@ -45,6 +53,8 @@ export interface RunState {
   errorMessage?: string
   summary?: RunEndEvent
   lastSeq: number
+  /** Completed turns. The in-flight query lives in `query` / `answer`. */
+  history: ChatTurn[]
 }
 
 const initialState: RunState = {
@@ -53,6 +63,21 @@ const initialState: RunState = {
   trace: [],
   answer: '',
   lastSeq: 0,
+  history: [],
+}
+
+function archiveCurrent(state: RunState): ChatTurn[] {
+  if (!state.query) return state.history
+  return [
+    ...state.history,
+    {
+      id: state.runId ?? `turn-${state.history.length}`,
+      query: state.query,
+      answer: state.answer,
+      clarification: state.clarification,
+      errorMessage: state.errorMessage,
+    },
+  ]
 }
 
 type Action =
@@ -80,7 +105,12 @@ function patchLatest(
 function reducer(state: RunState, action: Action): RunState {
   switch (action.kind) {
     case 'reset':
-      return { ...initialState, status: 'streaming', query: action.query }
+      return {
+        ...initialState,
+        status: 'streaming',
+        query: action.query,
+        history: archiveCurrent(state),
+      }
 
     case 'closed':
       return state.status === 'streaming' ? { ...state, status: 'done' } : state
