@@ -59,7 +59,13 @@ class Settings(BaseSettings):
     sqlite_path: Path = PROJECT_ROOT / "data" / "financials.db"
     table_name: str = "financials_summary"
 
-    @field_validator("qdrant_url", "qdrant_api_key", mode="before")
+    @field_validator(
+        "qdrant_url",
+        "qdrant_api_key",
+        "rerank_base_url",
+        "rerank_api_key",
+        mode="before",
+    )
     @classmethod
     def _strip_secrets(cls, value: object) -> object:
         if isinstance(value, str):
@@ -68,8 +74,12 @@ class Settings(BaseSettings):
         return value
 
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
-    # CrossEncoder needs PyTorch. Off by default so Librarian fits in 512 MB.
-    enable_reranker: bool = False
+    # Remote Infinity CrossEncoder. Empty URL keeps cosine-only retrieval so
+    # the 512 MB host never loads PyTorch.
+    rerank_base_url: Optional[str] = None
+    rerank_api_key: Optional[str] = None
+    rerank_timeout_s: float = 180.0
+    enable_reranker: bool = True
     retrieval_candidates: int = 20
     retrieval_top_k: int = 5
 

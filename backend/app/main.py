@@ -22,6 +22,7 @@ from .config import get_settings
 from .events import ChatRequest
 from .mock_agent import replay
 from .stream import live_stream
+from .agent.rerank import rerank_backend
 
 SSE_HEADERS = {
     "Cache-Control": "no-cache, no-transform",
@@ -37,11 +38,14 @@ def _warmup() -> None:
     which on Fargate is paid by whoever happens to ask first.
     """
     from .agent.embeddings import get_embeddings
+    from .agent.rerank import reranker_enabled, warmup_local_reranker
     from .agent.resources import get_qdrant, get_sql_database
 
     get_embeddings()
     get_qdrant()
     get_sql_database()
+    if reranker_enabled() and not get_settings().rerank_base_url:
+        warmup_local_reranker()
 
 
 @asynccontextmanager
@@ -72,6 +76,7 @@ async def health() -> dict[str, object]:
         "vllm": settings.vllm_base_url,
         "embeddings": settings.embedding_provider,
         "qdrant": str(settings.qdrant_url or settings.qdrant_path),
+        "rerank": rerank_backend(),
     }
 
 

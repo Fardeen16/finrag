@@ -7,6 +7,7 @@ Print statements are gone — node progress now travels over the event stream.
 from __future__ import annotations
 
 import asyncio
+import logging
 import sqlite3
 from typing import Any, Dict, List
 
@@ -17,7 +18,10 @@ from pydantic import BaseModel, Field
 from ..config import get_settings
 from .embeddings import assert_dimension_matches, get_embeddings
 from .llm import chat_model, structured_model
+from .rerank import rerank_documents, reranker_enabled
 from .resources import collection_dimension, get_qdrant, get_sql_database
+
+logger = logging.getLogger(__name__)
 
 _QUERY_REWRITE = (
     'Rewrite the following query for a semantic search system. Respond with ONLY '
@@ -49,13 +53,8 @@ async def librarian_rag_tool(query: str) -> List[Dict[str, Any]]:
     await asyncio.to_thread(lambda: assert_dimension_matches(collection_dimension()))
     embedding = await asyncio.to_thread(get_embeddings().embed_query, query)
 
-    # No CrossEncoder: that second PyTorch model is what pinned 512 MB boxes.
-    # Qdrant already returns cosine-ranked hits for this 200-chunk collection.
-    limit = (
-        settings.retrieval_candidates
-        if settings.enable_reranker
-        else settings.retrieval_top_k
-    )
+    use_rerank = reranker_enabled()
+    limit = settings.retrieval_candidates if use_rerank else settings.retrieval_top_k
     hits = await asyncio.to_thread(
         lambda: get_qdrant().query_points(
             collection_name=settings.collection_name,
@@ -67,14 +66,35 @@ async def librarian_rag_tool(query: str) -> List[Dict[str, Any]]:
     if not hits:
         return []
 
+    scored: List[tuple[Any, float | None]]
+    if use_rerank:
+        docs = [
+            str((hit.payload or {}).get("content") or (hit.payload or {}).get("summary") or "")
+            for hit in hits
+        ]
+        try:
+            scores = await rerank_documents(query, docs)
+            scored = sorted(zip(hits, scores), key=lambda item: item[1], reverse=True)
+        except Exception:
+            logger.exception("Remote rerank failed; using cosine order")
+            scored = [
+                (hit, float(hit.score) if hit.score is not None else None)
+                for hit in hits
+            ]
+    else:
+        scored = [
+            (hit, float(hit.score) if hit.score is not None else None)
+            for hit in hits
+        ]
+
     return [
         {
-            "source": hit.payload.get("source"),
-            "content": hit.payload.get("content"),
-            "summary": hit.payload.get("summary"),
-            "rerank_score": float(hit.score) if hit.score is not None else None,
+            "source": (hit.payload or {}).get("source"),
+            "content": (hit.payload or {}).get("content"),
+            "summary": (hit.payload or {}).get("summary"),
+            "rerank_score": score,
         }
-        for hit in hits[: settings.retrieval_top_k]
+        for hit, score in scored[: settings.retrieval_top_k]
     ]
 
 

@@ -31,6 +31,7 @@ VARIABLES = {
     "WARMUP_ON_START": "1",
     "VLLM_MODEL": None,  # from .env
     "VLLM_BASE_URL": None,
+    "RERANK_BASE_URL": None,
 }
 SECRETS = ("VLLM_API_KEY", "QDRANT_URL", "QDRANT_API_KEY")
 
@@ -131,8 +132,10 @@ def main() -> None:
         {"key": "AGENT_MODE", "value": "live"},
         {"key": "EMBEDDING_PROVIDER", "value": "local"},
         {"key": "WARMUP_ON_START", "value": "1"},
+        {"key": "ENABLE_RERANKER", "value": "1"},
         {"key": "VLLM_BASE_URL", "value": env["VLLM_BASE_URL"]},
         {"key": "VLLM_MODEL", "value": env["VLLM_MODEL"]},
+        {"key": "RERANK_BASE_URL", "value": env.get("RERANK_BASE_URL") or ""},
     ]
     for key in SECRETS:
         env_vars.append({"key": key, "value": env[key]})

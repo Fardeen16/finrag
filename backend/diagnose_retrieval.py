@@ -18,7 +18,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.app.agent.embeddings import get_embeddings  # noqa: E402
-from backend.app.agent.resources import get_qdrant, get_reranker  # noqa: E402
+from backend.app.agent.rerank import rerank_documents  # noqa: E402
+from backend.app.agent.resources import get_qdrant  # noqa: E402
 from backend.app.agent.tools import optimize_query  # noqa: E402
 from backend.app.config import get_settings  # noqa: E402
 
@@ -53,8 +54,8 @@ async def main():
         for rank, hit in enumerate(hits[:5], 1):
             print(f"    {rank}. {hit.score:.4f}  {snippet(hit.payload)}")
 
-        pairs = [[query_text, h.payload.get("content", "")] for h in hits]
-        scores = get_reranker().predict(pairs)
+        docs = [h.payload.get("content", "") for h in hits]
+        scores = await rerank_documents(query_text, docs)
         ranked = sorted(zip(hits, scores), key=lambda p: p[1], reverse=True)
 
         print("  reranked top 5:")

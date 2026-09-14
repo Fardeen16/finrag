@@ -55,13 +55,6 @@ def collection_distance() -> Distance | None:
 
 
 @lru_cache(maxsize=1)
-def get_reranker():
-    from sentence_transformers import CrossEncoder
-
-    return CrossEncoder(get_settings().reranker_model)
-
-
-@lru_cache(maxsize=1)
 def get_sql_database():
     import sqlite3
 
