@@ -1,0 +1,11 @@
+{
+  "input": {
+    "model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+    "query": "Alphabet FY2024 total revenue",
+    "docs": [
+      "Alphabet reported 350 billion of revenue in fiscal 2024.",
+      "This proxy statement is incorporated by reference."
+    ],
+    "return_docs": false
+  }
+}

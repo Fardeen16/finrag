@@ -43,10 +43,9 @@ COPY --from=frontend --chown=user:user /ui/dist ./frontend/dist
 
 USER user
 
-# Bake ONNX BGE (~70 MB) and MiniLM CrossEncoder (~80 MB). Do not pull
-# PyTorch — it will not fit in a 512 MB host and is what made Librarian hang.
+# Bake the ONNX BGE weights (~70 MB). Do not pull PyTorch or a local
+# CrossEncoder — both pin a 512 MB host. Rerank runs on a RunPod GPU worker.
 RUN python -c "from fastembed import TextEmbedding; TextEmbedding('BAAI/bge-small-en-v1.5')"
-RUN python -c "from fastembed.rerank.cross_encoder import TextCrossEncoder; TextCrossEncoder('Xenova/ms-marco-MiniLM-L-6-v2')"
 
 EXPOSE 8080
 CMD ["sh", "-c", "uvicorn backend.app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]

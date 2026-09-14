@@ -38,14 +38,11 @@ def _warmup() -> None:
     which on Fargate is paid by whoever happens to ask first.
     """
     from .agent.embeddings import get_embeddings
-    from .agent.rerank import reranker_enabled, warmup_local_reranker
     from .agent.resources import get_qdrant, get_sql_database
 
     get_embeddings()
     get_qdrant()
     get_sql_database()
-    if reranker_enabled() and not get_settings().rerank_base_url:
-        warmup_local_reranker()
 
 
 @asynccontextmanager

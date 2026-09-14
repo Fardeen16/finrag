@@ -1,16 +1,10 @@
-"""CrossEncoder rerank without PyTorch on the web host.
-
-Default: FastEmbed ONNX MiniLM (~80 MB), the same architecture as
-`cross-encoder/ms-marco-MiniLM-L-6-v2`. Optional: a RunPod Infinity
-endpoint via `RERANK_BASE_URL` if one is healthy.
-"""
+"""Remote CrossEncoder via RunPod Infinity. Never loads a reranker on the web host."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 import time
-from functools import lru_cache
 from typing import Any, List, Sequence
 
 import httpx
@@ -19,20 +13,17 @@ from ..config import get_settings
 
 logger = logging.getLogger(__name__)
 
-LOCAL_RERANKER_MODEL = "Xenova/ms-marco-MiniLM-L-6-v2"
-
 
 def reranker_enabled() -> bool:
-    return get_settings().enable_reranker
+    settings = get_settings()
+    return bool(settings.rerank_base_url) and settings.enable_reranker
 
 
 def rerank_backend() -> str:
     settings = get_settings()
-    if not settings.enable_reranker:
+    if not reranker_enabled():
         return "off"
-    if settings.rerank_base_url:
-        return settings.rerank_base_url
-    return f"local-onnx:{LOCAL_RERANKER_MODEL}"
+    return settings.rerank_base_url or "off"
 
 
 def _endpoint_root(url: str) -> str:
@@ -86,22 +77,12 @@ def scores_from_output(output: Any, n_docs: int) -> List[float]:
     return scores
 
 
-@lru_cache(maxsize=1)
-def local_cross_encoder():
-    from fastembed.rerank.cross_encoder import TextCrossEncoder
+async def rerank_documents(query: str, documents: Sequence[str]) -> List[float]:
+    """Return a relevance score per document, same order as `documents`."""
+    docs = [doc if isinstance(doc, str) else str(doc or "") for doc in documents]
+    if not docs:
+        return []
 
-    return TextCrossEncoder(model_name=LOCAL_RERANKER_MODEL)
-
-
-def warmup_local_reranker() -> None:
-    local_cross_encoder()
-
-
-def _local_scores(query: str, documents: Sequence[str]) -> List[float]:
-    return [float(score) for score in local_cross_encoder().rerank(query, list(documents))]
-
-
-async def _remote_scores(query: str, docs: List[str]) -> List[float]:
     settings = get_settings()
     root = _endpoint_root(settings.rerank_base_url or "")
     if not root:
@@ -113,7 +94,11 @@ async def _remote_scores(query: str, docs: List[str]) -> List[float]:
             "query": query,
             "docs": docs,
             "return_docs": False,
-        }
+        },
+        "policy": {
+            "executionTimeout": int(max(settings.rerank_timeout_s, 30.0) * 1000),
+            "ttl": 600_000,
+        },
     }
     headers = {
         "Authorization": f"Bearer {_api_key()}",
@@ -148,15 +133,3 @@ async def _remote_scores(query: str, docs: List[str]) -> List[float]:
     if output is None:
         raise RuntimeError(f"Rerank returned no output: {body!r}"[:800])
     return scores_from_output(output, len(docs))
-
-
-async def rerank_documents(query: str, documents: Sequence[str]) -> List[float]:
-    """Return a relevance score per document, same order as `documents`."""
-    docs = [doc if isinstance(doc, str) else str(doc or "") for doc in documents]
-    if not docs:
-        return []
-
-    settings = get_settings()
-    if settings.rerank_base_url:
-        return await _remote_scores(query, docs)
-    return await asyncio.to_thread(_local_scores, query, docs)

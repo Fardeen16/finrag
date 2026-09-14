@@ -74,11 +74,10 @@ class Settings(BaseSettings):
         return value
 
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
-    # Remote Infinity CrossEncoder. Empty URL keeps cosine-only retrieval so
-    # the 512 MB host never loads PyTorch.
+    # Infinity CrossEncoder on RunPod. Empty URL = cosine-only (no local rerank).
     rerank_base_url: Optional[str] = None
     rerank_api_key: Optional[str] = None
-    rerank_timeout_s: float = 180.0
+    rerank_timeout_s: float = 90.0
     enable_reranker: bool = True
     retrieval_candidates: int = 20
     retrieval_top_k: int = 5
