@@ -337,6 +337,40 @@ async def auditor_node(state: AgentState) -> Dict[str, Any]:
     return {"verification_history": (state.get("verification_history") or []) + [audit]}
 
 
+def _message_text(response: Any) -> str:
+    content = getattr(response, "content", None)
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: List[str] = []
+        for part in content:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict):
+                parts.append(str(part.get("text") or part.get("content") or ""))
+            else:
+                parts.append(str(getattr(part, "text", "") or ""))
+        return "".join(parts).strip()
+    return str(content or "").strip()
+
+
+def _readable_tool_excerpt(step: Dict[str, Any]) -> str:
+    name = step.get("tool_name") or "tool"
+    output = step.get("tool_output")
+    if isinstance(output, str):
+        return f"{name}: {output[:500]}"
+    if isinstance(output, list):
+        snippets = []
+        for hit in output[:3]:
+            if not isinstance(hit, dict):
+                continue
+            snippet = (hit.get("summary") or hit.get("content") or "")[:240]
+            if snippet:
+                snippets.append(snippet)
+        return f"{name}: " + " | ".join(snippets) if snippets else f"{name}: no passages"
+    return f"{name}: {json.dumps(output, default=str)[:400]}"
+
+
 async def synthesizer_node(state: AgentState) -> Dict[str, Any]:
     steps = state.get("intermediate_steps") or []
     if not steps:
@@ -351,24 +385,25 @@ async def synthesizer_node(state: AgentState) -> Dict[str, Any]:
         f"## Tool: {s['tool_name']}\nOutput: {json.dumps(s['tool_output'], default=str)[:3000]}"
         for s in steps
     )
+    # Do not use str.format — tool JSON braces can blow up the template.
+    prompt = SYNTHESIZER_PROMPT.replace("{request}", state["original_request"]).replace(
+        "{context}", context
+    )
+    text = ""
     try:
-        response = await chat_model(temperature=0.2, max_tokens=1024).ainvoke(
-            SYNTHESIZER_PROMPT.format(request=state["original_request"], context=context)
-        )
-        text = (getattr(response, "content", None) or "").strip()
-    except Exception as exc:
+        # Non-streaming: a single completion. Streaming was passing
+        # stream_chunk_timeout into ChatOpenAI and raising TypeError in ~4ms.
+        response = await chat_model(
+            temperature=0.2, max_tokens=1024, streaming=False
+        ).ainvoke(prompt)
+        text = _message_text(response)
+    except Exception:
         text = ""
-        fallback_reason = f"Synthesizer LLM failed ({type(exc).__name__})."
-    else:
-        fallback_reason = "Synthesizer returned no text."
 
     if not text:
         text = (
-            f"{fallback_reason} Grounded tool results:\n\n"
-            + "\n\n".join(
-                f"**{s['tool_name']}**: {json.dumps(s['tool_output'], default=str)[:800]}"
-                for s in steps
-            )
+            "Here is what the tools found (I could not format a full narrative):\n\n"
+            + "\n\n".join(_readable_tool_excerpt(step) for step in steps)
         )
     return {"final_response": text}
 

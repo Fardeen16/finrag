@@ -43,11 +43,13 @@ def chat_model(
         # as a generic "Connection error."
         "default_headers": {"Accept-Encoding": "identity"},
     }
-    # ChatOpenAI forwards this to every OpenAI call. Structured output uses
-    # AsyncCompletions.parse(), which rejects it. Only attach it on streams,
-    # where the default 120s chunk wait kills a cold RunPod worker.
+    # Some langchain-openai builds reject this kwarg (TypeError on construct).
+    # Structured parse() also rejects it. Only try it on streaming calls.
     if streaming:
-        kwargs["stream_chunk_timeout"] = settings.llm_timeout_s
+        try:
+            return ChatOpenAI(**kwargs, stream_chunk_timeout=settings.llm_timeout_s)
+        except TypeError:
+            pass
     return ChatOpenAI(**kwargs)
 
 
