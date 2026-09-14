@@ -16,11 +16,107 @@ const SPEEDS = [
   { label: '20×', value: 20, hint: 'Fast iteration' },
 ]
 
+const TURNS_KEY = 'finrag.chat.turns'
+
+type ChatTurn = {
+  id: string
+  query: string
+  answer: string
+  clarification?: string
+  errorMessage?: string
+}
+
+function loadTurns(): ChatTurn[] {
+  try {
+    const raw = sessionStorage.getItem(TURNS_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(
+      (item): item is ChatTurn =>
+        typeof item === 'object' &&
+        item !== null &&
+        typeof (item as ChatTurn).id === 'string' &&
+        typeof (item as ChatTurn).query === 'string',
+    )
+  } catch {
+    return []
+  }
+}
+
+function ConversationTurn({
+  query,
+  answer,
+  clarification,
+  errorMessage,
+  streaming = false,
+}: {
+  query: string
+  answer: string
+  clarification?: string
+  errorMessage?: string
+  streaming?: boolean
+}) {
+  const paragraphs = answer ? answer.split('\n\n') : []
+
+  return (
+    <article className="space-y-3 border-b border-edge pb-5 last:border-b-0 last:pb-0">
+      <div>
+        <p className="font-mono text-[10px] uppercase tracking-wider text-slate-500">You</p>
+        <p className="mt-1 text-sm leading-relaxed text-slate-300">{query}</p>
+      </div>
+
+      {clarification && (
+        <div className="rounded-lg border border-sky-500/40 bg-sky-500/10 p-4">
+          <p className="font-mono text-[10px] uppercase tracking-wider text-sky-300">
+            Gatekeeper needs clarification
+          </p>
+          <p className="mt-2 text-sm leading-relaxed text-slate-200">{clarification}</p>
+        </div>
+      )}
+
+      {answer && (
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-wider text-slate-500">FinRAG</p>
+          <div className="mt-1 space-y-4">
+            {paragraphs.map((para, i) => (
+              <p key={i} className="text-sm leading-relaxed text-slate-200">
+                {para}
+                {streaming && i === paragraphs.length - 1 && (
+                  <span className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse bg-emerald-400" />
+                )}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {streaming && !answer && !clarification && (
+        <p className="text-xs text-slate-500">
+          Working — first question after idle can take a few minutes while the GPU worker starts.
+          Watch the trace panel.
+        </p>
+      )}
+
+      {errorMessage && (
+        <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 p-4">
+          <p className="font-mono text-[10px] uppercase tracking-wider text-rose-300">
+            Stream failed
+          </p>
+          <p className="mt-2 text-sm text-slate-300">{errorMessage}</p>
+        </div>
+      )}
+    </article>
+  )
+}
+
 export default function App() {
   const { state, send, cancel } = useAgentStream()
   const [draft, setDraft] = useState(EXAMPLES[0])
   const [speed, setSpeed] = useState(5)
   const [agentMode, setAgentMode] = useState<'live' | 'mock'>('mock')
+  const [turns, setTurns] = useState<ChatTurn[]>(loadTurns)
+  const activeIdRef = useRef<string | null>(null)
   const answerRef = useRef<HTMLDivElement>(null)
   const streaming = state.status === 'streaming'
 
@@ -34,12 +130,56 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    const id = activeIdRef.current
+    if (!id) return
+    setTurns((prev) =>
+      prev.map((turn) =>
+        turn.id === id
+          ? {
+              ...turn,
+              answer: state.answer,
+              clarification: state.clarification,
+              errorMessage: state.errorMessage,
+            }
+          : turn,
+      ),
+    )
+    if (state.status === 'done' || state.status === 'error') {
+      activeIdRef.current = null
+    }
+  }, [state.answer, state.clarification, state.errorMessage, state.status])
+
+  useEffect(() => {
+    const sealed = turns.filter((turn) => turn.id !== activeIdRef.current)
+    sessionStorage.setItem(TURNS_KEY, JSON.stringify(sealed))
+  }, [turns])
+
+  useEffect(() => {
     answerRef.current?.scrollTo({ top: answerRef.current.scrollHeight })
-  }, [state.answer])
+  }, [turns, streaming])
 
   function submit() {
     const query = draft.trim()
-    if (query && !streaming) void send(query, speed)
+    if (!query || streaming) return
+    const previousId = activeIdRef.current
+    const id = crypto.randomUUID()
+    activeIdRef.current = id
+    setTurns((prev) => {
+      const sealed = previousId
+        ? prev.map((turn) =>
+            turn.id === previousId
+              ? {
+                  ...turn,
+                  answer: state.answer || turn.answer,
+                  clarification: state.clarification ?? turn.clarification,
+                  errorMessage: state.errorMessage ?? turn.errorMessage,
+                }
+              : turn,
+          )
+        : prev
+      return [...sealed, { id, query, answer: '' }]
+    })
+    void send(query, speed)
   }
 
   return (
@@ -86,17 +226,10 @@ export default function App() {
       </header>
 
       <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[1fr_420px]">
-        {/* --- Conversation ------------------------------------------------ */}
         <main className="flex min-h-0 flex-col gap-3">
           <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-edge bg-panel">
-            {state.query && (
-              <div className="border-b border-edge px-5 py-3.5">
-                <p className="text-sm leading-relaxed text-slate-300">{state.query}</p>
-              </div>
-            )}
-
             <div ref={answerRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-              {state.status === 'idle' && (
+              {turns.length === 0 && (
                 <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
                   <p className="max-w-sm text-sm leading-relaxed text-slate-500">
                     Ask a question about Alphabet's filings. The supervisor graph plans, calls
@@ -117,49 +250,23 @@ export default function App() {
                 </div>
               )}
 
-              {state.clarification && (
-                <div className="rounded-lg border border-sky-500/40 bg-sky-500/10 p-4">
-                  <p className="font-mono text-[10px] uppercase tracking-wider text-sky-300">
-                    Gatekeeper needs clarification
-                  </p>
-                  <p className="mt-2 text-sm leading-relaxed text-slate-200">
-                    {state.clarification}
-                  </p>
-                </div>
-              )}
-
-              {state.answer && (
-                <div className="space-y-4">
-                  {state.answer.split('\n\n').map((para, i) => (
-                    <p key={i} className="text-sm leading-relaxed text-slate-200">
-                      {para}
-                      {streaming && i === state.answer.split('\n\n').length - 1 && (
-                        <span className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse bg-emerald-400" />
-                      )}
-                    </p>
+              {turns.length > 0 && (
+                <div className="space-y-6">
+                  {turns.map((turn) => (
+                    <ConversationTurn
+                      key={turn.id}
+                      query={turn.query}
+                      answer={turn.answer}
+                      clarification={turn.clarification}
+                      errorMessage={turn.errorMessage}
+                      streaming={streaming && turn.id === activeIdRef.current}
+                    />
                   ))}
-                </div>
-              )}
-
-              {streaming && !state.answer && !state.clarification && (
-                <p className="text-xs text-slate-500">
-                  Working — first question after idle can take a few minutes while
-                  the GPU worker starts. Watch the trace panel.
-                </p>
-              )}
-
-              {state.errorMessage && (
-                <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 p-4">
-                  <p className="font-mono text-[10px] uppercase tracking-wider text-rose-300">
-                    Stream failed
-                  </p>
-                  <p className="mt-2 text-sm text-slate-300">{state.errorMessage}</p>
                 </div>
               )}
             </div>
           </div>
 
-          {/* --- Composer -------------------------------------------------- */}
           <div className="rounded-xl border border-edge bg-panel p-2.5">
             <textarea
               value={draft}
@@ -200,7 +307,6 @@ export default function App() {
           </div>
         </main>
 
-        {/* --- Trace panel -------------------------------------------------- */}
         <aside className="flex min-h-0 flex-col gap-3">
           <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-edge bg-panel">
             <header className="flex items-center gap-2 border-b border-edge px-4 py-3">

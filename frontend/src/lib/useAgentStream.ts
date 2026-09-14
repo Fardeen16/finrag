@@ -271,7 +271,10 @@ export function useAgentStream() {
       }
       dispatch({ kind: 'closed' })
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        dispatch({ kind: 'closed' })
+        return
+      }
       const raw = error instanceof Error ? error.message : String(error)
       const message =
         /connection error|failed to fetch|networkerror|load failed/i.test(raw)
