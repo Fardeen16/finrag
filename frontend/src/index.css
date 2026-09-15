@@ -1,10 +1,12 @@
 @import 'tailwindcss';
 
 @theme {
-  --color-canvas: #0a0d14;
-  --color-panel: #11151f;
-  --color-edge: #202634;
-  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+  --color-canvas: #080b12;
+  --color-panel: #10151f;
+  --color-edge: #243044;
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'IBM Plex Serif', ui-serif, Georgia, serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 }
 
 @keyframes trace-in {
@@ -30,11 +32,19 @@ body,
 
 body {
   background-color: var(--color-canvas);
+  background-image:
+    radial-gradient(1200px 600px at 12% -10%, rgba(56, 189, 248, 0.08), transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, rgba(16, 185, 129, 0.06), transparent 50%);
   color: #e6e9ef;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 
-/* Scrollbars that don't fight the dark theme. */
+::selection {
+  background: rgba(56, 189, 248, 0.28);
+  color: #f8fafc;
+}
+
 * {
   scrollbar-width: thin;
   scrollbar-color: #2a3040 transparent;

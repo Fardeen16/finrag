@@ -161,10 +161,15 @@ function TraceCard({ entry, isLast }: { entry: TraceEntry; isLast: boolean }) {
 export function AgentTrace({ trace }: { trace: TraceEntry[] }) {
   if (trace.length === 0) {
     return (
-      <p className="px-1 text-xs leading-relaxed text-slate-500">
-        Node transitions appear here as the supervisor graph runs — plans, tool calls, and the
-        Auditor's verdict on each one.
-      </p>
+      <div className="px-1 py-2">
+        <p className="text-[13px] leading-relaxed text-slate-500">
+          Gatekeeper, Planner, tools, Auditor, and Synthesizer show up here as they run.
+        </p>
+        <p className="mt-2 text-[12px] text-slate-600">
+          A replan means the Auditor rejected a tool result and the Planner tried a different
+          path.
+        </p>
+      </div>
     )
   }
   return (
