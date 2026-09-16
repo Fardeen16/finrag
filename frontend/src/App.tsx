@@ -6,7 +6,7 @@ import { useAgentStream } from './lib/useAgentStream'
 
 /** Swap these if you pick a different product name. */
 const PRODUCT_NAME = 'Financial Analyst Agent'
-const PRODUCT_TAGLINE = 'Alphabet Inc. · FY2024 10-K'
+const PRODUCT_TAGLINE = 'Grounded answers from filings'
 const ASSISTANT_LABEL = 'Analyst'
 
 const EXAMPLES = [
@@ -222,7 +222,7 @@ export default function App() {
                   </h2>
                   <p className="mt-2 max-w-md text-[15px] leading-relaxed text-slate-500">
                     The agent plans tools, audits its own evidence, and replans when a
-                    call actually fails. Answers stay grounded in Alphabet's filing.
+                    call actually fails. Answers stay grounded in the source filings.
                   </p>
                   <div className="mt-6 flex w-full max-w-lg flex-col gap-2">
                     {EXAMPLES.map((example) => (
