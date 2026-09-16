@@ -8,11 +8,11 @@ An agentic RAG assistant for financial filings. A LangGraph supervisor plans too
 
 <!-- Drop files into docs/screenshots/ then these will render. -->
 
-![Chat]
+**Chat:**
 <img width="1108" height="668" alt="finrag_firstpage" src="https://github.com/user-attachments/assets/a44edc03-d200-49c2-99b9-936f69200ae0" />
 
 
-![Reasoning]
+**Resoning:**
 <img width="1097" height="671" alt="finrag_oneprompt" src="https://github.com/user-attachments/assets/53b5077d-5672-49b3-88cd-2efe23ba4a96" />
 
 ## How it works
